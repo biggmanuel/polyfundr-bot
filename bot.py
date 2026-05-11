@@ -365,14 +365,14 @@ async def evaluate_past_predictions(bot):
                     chat_id=chat_id,
                     text=(
                         f"📊 *AUTO EVAL*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"🕐 Window: {pred['mode'].upper()} | Conf: {pred['confidence']}%\n"
                         f"🤖 Predicted: {pred['lean']} | Actual: {actual}\n"
                         f"Open: ${open_p:.2f} → Close: ${close_p:.2f}\n"
                         f"💰 P&L: {pnl}\n"
                         f"🏦 Bankroll: ${state.get('bankroll', 1000.0):.2f}\n"
                         f"{emoji} {'CORRECT' if correct else 'WRONG'}\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━"
+                        f"━━━━━━━━━━━━━━━━━━━━"
                     ),
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -512,11 +512,11 @@ async def send_settings(bot, chat_id):
     ]
     msg = (
         f"⚙️ *SETTINGS*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━\n"
         f"💰 Current Stake: ${settings['stake']:.0f}\n"
         f"🎯 Confidence Filter: {settings['confidence_filter']}%\n"
         f"🔔 Alert Mode: {'ON ✅ (A+ & S only)' if settings['alert_mode'] else 'OFF ❌ (all signals)'}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━"
+        f"━━━━━━━━━━━━━━━━━"
     )
     await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN,
                            reply_markup=InlineKeyboardMarkup(keyboard))
@@ -601,13 +601,13 @@ async def run_analysis(bot, mode="current", chat_id=TELEGRAM_CHAT_ID):
                     chat_id=chat_id,
                     text=(
                         f"⏮️ *PAST WINDOW RESULT*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
                         f"⏱️ Window: {target_win}\n"
                         f"🤖 Predicted: {existing['lean']} ({existing['confidence']}%)\n"
                         f"📊 Actual: {existing['result']}\n"
                         f"Open: ${existing['open_price']:.2f} → Close: ${existing['close_price']:.2f}\n"
                         f"{emoji} {'CORRECT' if existing['correct'] else 'WRONG'}\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━"
+                        f"━━━━━━━━━━━━━━━━━━"
                     ),
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -683,24 +683,24 @@ async def run_analysis(bot, mode="current", chat_id=TELEGRAM_CHAT_ID):
 
         msg = (
             f"🎯 *POLYFUNDR PRO* | BTC/USDT 5M\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"{bias_emoji} *BIAS:* {data['lean']}\n"
             f"🎯 *CONFIDENCE:* {data['confidence']}%\n"
             f"⚡ *STRATEGY:* {data.get('strategy', 'N/A')}\n"
             f"🏆 *CONFLUENCE:* {c_grade} ({c_score}/100)\n"
             f"🌍 *SESSION:* {session}\n"
             f"🕐 *MODE:* {mode_label}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"📊 *STRUCTURE & ZONE*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"🔷 *STRUCTURE:* {structure}\n"
             f"🗺️ *ZONE:* {zone}\n"
             f"💵 *PRICE:* ${current_price:.2f}\n"
             f"🟢 *SUPPORT:* ${support:.2f}\n"
             f"🔴 *RESISTANCE:* ${resistance:.2f}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"📉 *INDICATORS*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"📈 EMA9:  ${ema9:.2f}\n"
             f"📈 EMA21: ${ema21:.2f}\n"
             f"📈 EMA50: ${ema50:.2f}\n"
@@ -712,21 +712,21 @@ async def run_analysis(bot, mode="current", chat_id=TELEGRAM_CHAT_ID):
             f"🕯️ CANDLE: {candle_pattern}\n"
             f"📦 VOLUME: {volume_trend}\n"
             f"🌡️ FEAR/GREED: {fear_greed}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"🕐 *HIGHER TIMEFRAME*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"15M BIAS: {htf_bias}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"🧠 *WHY THIS TRADE*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"_{data['reasoning']}_\n\n"
             f"⛔ *INVALIDATION:* {invalidation}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"⏱️ *WINDOW:* {target_win}\n"
             f"💰 *STAKE:* ${current_stake:.0f} (Step {step})\n"
             f"📉 *RISK:* ${total_risk:.0f}\n"
             f"🏦 *BANKROLL:* ${bankroll:.2f}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"[🔗 Open on PolyFundr]({market_url})"
         )
 
