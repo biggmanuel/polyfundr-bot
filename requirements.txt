@@ -1,0 +1,4 @@
+﻿groq
+ccxt
+python-telegram-bot
+numpy
