@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from telegram.constants import ParseMode
 from collections import defaultdict
 from typing import List, Optional
-#bot version 1.3 more to come
+#bot version 1.4 more to come
 # === CONFIG ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8452633533:AAHitoH7BYaKC1lOzvETkURCraxC2N0DO8Y")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "1754581939")
@@ -922,7 +922,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # === UPDATED BUTTON HANDLER ===
-    async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
@@ -930,55 +930,41 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'review30':
         text = show_30min_review()
         await query.message.reply_text(text)
-
     elif query.data == '24h':
         text = show_24h_review()
         await query.message.reply_text(text)
-
     elif query.data == '7day':
         text = show_7day_stats()
         await query.message.reply_text(text)
-
     elif query.data == 'past':
         windows = get_time_windows()
         await send_past_result(context.bot, chat_id, windows['past']['start_ts'], windows['past']['label'])
-
     elif query.data in ['current', 'future']:
         await build_and_send_signal(context.bot, mode=query.data, chat_id=chat_id)
-
     elif query.data == 'links':
         await send_market_links(context.bot, chat_id=chat_id)
-
     elif query.data == 'settings':
         await send_settings(context.bot, chat_id=chat_id)
-
     elif query.data == 'toggle_alert':
         settings = load_settings()
         settings['alert_mode'] = not settings.get('alert_mode', False)
         save_settings(settings)
         await query.message.reply_text(f"🔔 Alert Mode: {'ON ✅' if settings['alert_mode'] else 'OFF ❌'}")
-
     elif query.data == 'set_stake':
         await query.message.reply_text("💰 Send: /stake 100")
-
     elif query.data == 'set_confidence':
         await query.message.reply_text("🎯 Send: /confidence 70")
-
     elif query.data == 'export_journal':
         await export_journal(context.bot, chat_id=chat_id)
-
     elif query.data == 'back_menu':
-        # === FIXED: Return to main menu ===
-        await menu_command(update, context)
-
+        await menu_command(update, context)          # ← Back button now works
     elif query.data == 'reset':
         state = get_state()
         state['step'] = 0
         state['locked_direction'] = None
         save_state(state)
         await query.message.reply_text("♻️ Martingale Reset Complete!")
-        await menu_command(update, context)   # Also go back to menu after reset
-
+        await menu_command(update, context)
     else:
         await query.message.reply_text("❓ Unknown action")
 
