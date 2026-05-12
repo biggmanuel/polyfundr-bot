@@ -542,7 +542,25 @@ def load_predictions():
 
 def save_predictions(p):
     with open(PREDICTIONS_FILE, "w") as f: json.dump(p, f, indent=2)
-
+# === LOG PREDICTION (this was missing) ===
+def log_prediction(window_start_ts, mode, lean, confidence, open_price, grade, strategy, session):
+    preds = load_predictions()
+    preds.append({
+        "window_start_ts": window_start_ts,
+        "mode": mode,
+        "lean": lean,
+        "confidence": confidence,
+        "open_price": open_price,
+        "grade": grade,
+        "strategy": strategy,
+        "session": session,
+        "result": None,
+        "close_price": None,
+        "correct": None,
+        "logged_at": datetime.now(timezone.utc).isoformat()
+    })
+    save_predictions(preds)
+    
 # === SIGNAL BUILDER (your original - unchanged) ===
 async def build_and_send_signal(bot, mode="future", chat_id=None):
     try:
