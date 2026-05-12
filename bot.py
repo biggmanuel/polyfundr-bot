@@ -287,42 +287,60 @@ def fetch_market_data():
 async def evaluate_past_predictions(bot):
     try:
         preds = load_predictions()
-        if not preds: return
+        if not preds: 
+            return
+
         state = get_state()
         settings = load_settings()
         ex = ccxt.binance()
-        ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
+        ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=150)
+        
+        # Key Fix: Use timestamp directly (no +4 hours)
         candle_map = {int(c[0]/1000): c for c in ohlcv}
+
         updated = False
+        now_utc = int(datetime.now(timezone.utc).timestamp())
 
         for pred in preds:
-            if pred["result"] is not None: continue
-            utc_ts = pred["window_start_ts"] + (4 * 3600)
-            candle = candle_map.get(utc_ts)
-            if not candle: continue
-            if int(datetime.now(timezone.utc).timestamp()) < utc_ts + 300: continue
+            if pred.get("result") is not None:
+                continue
+
+            ts = pred["window_start_ts"]
+            candle = candle_map.get(ts)
+
+            if not candle:
+                continue
+            if now_utc < ts + 300:   # Candle not closed yet
+                continue
 
             open_p = candle[1]
             close_p = candle[4]
             actual = "UP" if close_p >= open_p else "DOWN"
             correct = (pred["lean"] == actual)
-            candle_emoji = "🟢" if actual == "UP" else "🔴"
+
+            # Update prediction
             pred["close_price"] = close_p
             pred["result"] = actual
             pred["correct"] = correct
             updated = True
 
+            # Martingale logic
             stake = settings["stake"] * (2 ** state.get("step", 0))
-            pnl = f"+${stake:.2f}" if correct else f"-${stake:.2f}"
+            pnl = f"+\( {stake:.2f}" if correct else f"- \){stake:.2f}"
+
             if correct:
                 state["bankroll"] = state.get("bankroll", 1000.0) + stake
                 state["step"] = 0
             else:
-                state["bankroll"] = state.get("bankroll", 1000.0) - stake
+                state["bankroll"] = max(50.0, state.get("bankroll", 1000.0) - stake)
                 state["step"] = min(state.get("step", 0) + 1, 5)
+
             save_state(state)
 
+            # Broadcast result
             result_emoji = "✅" if correct else "❌"
+            candle_emoji = "🟢" if actual == "UP" else "🔴"
+
             for chat_id in BROADCAST_IDS:
                 await bot.send_message(
                     chat_id=chat_id,
@@ -340,7 +358,10 @@ async def evaluate_past_predictions(bot):
                     ),
                     parse_mode=ParseMode.MARKDOWN
                 )
-        if updated: save_predictions(preds)
+
+        if updated:
+            save_predictions(preds)
+
     except Exception as e:
         print(f"Eval Error: {e}")
 
@@ -387,21 +408,23 @@ async def send_past_result(bot, chat_id, window_start_ts, target_win):
         ex = ccxt.binance()
         ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
         candle_map = {int(c[0]/1000): c for c in ohlcv}
-        utc_ts = window_start_ts + (4 * 3600)
-        candle = candle_map.get(utc_ts)
-        preds = load_predictions()
-        pred = next((p for p in preds if p["window_start_ts"] == window_start_ts), None)
+
+        # Key Fix: No +4 hours
+        candle = candle_map.get(window_start_ts)
 
         if not candle:
             await bot.send_message(chat_id=chat_id,
-                                   text=f"⏮️ *PAST*: {target_win}\n⏳ Candle not available yet.",
-                                   parse_mode=ParseMode.MARKDOWN)
+                text=f"⏮️ *PAST*: {target_win}\n⏳ Candle not available yet.",
+                parse_mode=ParseMode.MARKDOWN)
             return
 
         open_p = candle[1]
         close_p = candle[4]
         actual = "UP" if close_p >= open_p else "DOWN"
         candle_emoji = "🟢" if actual == "UP" else "🔴"
+
+        preds = load_predictions()
+        pred = next((p for p in preds if p["window_start_ts"] == window_start_ts), None)
 
         if pred:
             correct = pred["lean"] == actual
