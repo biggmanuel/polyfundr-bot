@@ -342,10 +342,15 @@ def show_30min_review() -> str:
     trades = load_trades()
     
     if not trades:
-        return "🕐 30-MIN REVIEW\n━━━━━━━━━━━━━━━\nNo trades found yet.\n━━━━━━━━━━━━━━━"
+        return "🕐 30-MIN REVIEW\n━━━━━━━━━━━━━━━\nNo trades recorded yet.\n━━━━━━━━━━━━━━━"
 
-    # Get last 7 trades instead of strict 30-min window (more reliable)
-    recent = trades[-7:]
+    # Try last 30 minutes first
+    window_start = now - timedelta(minutes=30)
+    recent = [t for t in trades if window_start <= t.timestamp <= now]
+
+    # If not enough trades, show last 7 signals (much more useful)
+    if len(recent) < 3:
+        recent = trades[-7:]
 
     wins = sum(1 for t in recent if t.is_win())
     losses = sum(1 for t in recent if t.is_loss())
@@ -355,7 +360,7 @@ def show_30min_review() -> str:
     output = [
         "🕐 30-MIN REVIEW",
         SEP,
-        f"Time Range: Last 7 Signals",
+        f"Time Range: Last {len(recent)} Signals",
         f"✅ {wins} | ❌ {losses} | ⏳ {pending}",
         f"🎯 Win Rate: {win_rate:.1f}%",
         ""
@@ -364,8 +369,7 @@ def show_30min_review() -> str:
     for t in recent:
         status = "✅" if t.is_win() else ("❌" if t.is_loss() else "⏳")
         actual_str = f"→ {'🟢' if t.actual == 'UP' else '🔴'} {t.actual}" if t.actual else ""
-        time_str = t.timestamp.strftime('%H:%M')
-        output.append(f"• {time_str} {status} {t.predicted} {actual_str} {t.confidence}%")
+        output.append(f"• {t.timestamp.strftime('%H:%M')} {status} {t.predicted} {actual_str} {t.confidence}%")
 
     output.append(SEP)
     return "\n".join(output)
