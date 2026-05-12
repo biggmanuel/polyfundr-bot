@@ -629,9 +629,10 @@ async def build_and_send_signal(bot, mode="future", chat_id=None):
         vwap_pos = "✅" if current_price > vwap else "❌"
 
         step = state.get("step", 0)
-        stake = settings["stake"]
-        current_stake = stake * (2 ** step)
-        total_risk = sum([stake * (2 ** i) for i in range(step + 1)])
+        base_stake = settings["stake"]
+        current_stake = base_stake * (2 ** step)
+        next_stake = base_stake * (2 ** (step + 1))      # ← New line
+        total_risk = sum([base_stake * (2 ** i) for i in range(step + 2)])
         bankroll = state.get("bankroll", 1000.0)
 
         windows = get_time_windows()
