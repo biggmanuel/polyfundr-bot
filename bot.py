@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from telegram.constants import ParseMode
 from collections import defaultdict
 from typing import List, Optional
-#bot version 1.4 more to come
+#bot version 1.5 more to come
 # === CONFIG ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8452633533:AAHitoH7BYaKC1lOzvETkURCraxC2N0DO8Y")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "1754581939")
@@ -930,44 +930,74 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'review30':
         text = show_30min_review()
         await query.message.reply_text(text)
+
     elif query.data == '24h':
         text = show_24h_review()
         await query.message.reply_text(text)
+
     elif query.data == '7day':
         text = show_7day_stats()
         await query.message.reply_text(text)
+
     elif query.data == 'past':
         windows = get_time_windows()
         await send_past_result(context.bot, chat_id, windows['past']['start_ts'], windows['past']['label'])
+
     elif query.data in ['current', 'future']:
         await build_and_send_signal(context.bot, mode=query.data, chat_id=chat_id)
+
     elif query.data == 'links':
         await send_market_links(context.bot, chat_id=chat_id)
+
     elif query.data == 'settings':
         await send_settings(context.bot, chat_id=chat_id)
+
     elif query.data == 'toggle_alert':
         settings = load_settings()
         settings['alert_mode'] = not settings.get('alert_mode', False)
         save_settings(settings)
         await query.message.reply_text(f"🔔 Alert Mode: {'ON ✅' if settings['alert_mode'] else 'OFF ❌'}")
+
     elif query.data == 'set_stake':
         await query.message.reply_text("💰 Send: /stake 100")
+
     elif query.data == 'set_confidence':
         await query.message.reply_text("🎯 Send: /confidence 70")
+
     elif query.data == 'export_journal':
         await export_journal(context.bot, chat_id=chat_id)
+
     elif query.data == 'back_menu':
-        await menu_command(update, context)          # ← Back button now works
+        # FIXED: Edit current message to show main menu (cleaner)
+        windows = get_time_windows()
+        keyboard = [
+            [InlineKeyboardButton(f"⏮️ Past Result ({windows['past']['label']})", callback_data='past')],
+            [InlineKeyboardButton(f"▶️ Current ({windows['current']['label']})", callback_data='current')],
+            [InlineKeyboardButton(f"⏭️ Future ({windows['future']['label']})", callback_data='future')],
+            [InlineKeyboardButton("🕐 30-Min Review", callback_data='review30'),
+             InlineKeyboardButton("📅 7-Day Stats", callback_data='7day')],
+            [InlineKeyboardButton("🕒 24h Review", callback_data='24h'),
+             InlineKeyboardButton("🔗 Links", callback_data='links')],
+            [InlineKeyboardButton("⚙️ Settings", callback_data='settings')],
+            [InlineKeyboardButton("🔄 Reset Martingale", callback_data='reset')]
+        ]
+        await query.edit_message_text(
+            text="🎛️ *PolyFundr Workstation* 👑",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
     elif query.data == 'reset':
         state = get_state()
         state['step'] = 0
         state['locked_direction'] = None
         save_state(state)
         await query.message.reply_text("♻️ Martingale Reset Complete!")
+        # Then show menu
         await menu_command(update, context)
-    else:
-        await query.message.reply_text("❓ Unknown action")
 
+    else:
+        await query.message.reply_text("❓ Unknown button")
 # === COMMANDS ===
 async def stake_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
