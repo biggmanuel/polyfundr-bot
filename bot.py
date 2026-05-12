@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from telegram.constants import ParseMode
 from collections import defaultdict
 from typing import List, Optional
-#bot version 1.3
+#bot version 1.3 more to come
 # === CONFIG ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8452633533:AAHitoH7BYaKC1lOzvETkURCraxC2N0DO8Y")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "1754581939")
