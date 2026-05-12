@@ -479,6 +479,21 @@ def show_candle_result(trade: Trade) -> str:
         f"{SEP}"
     )
 
+# === debug on tg ===
+async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        with open(PREDICTIONS_FILE, "r") as f:
+            data = json.load(f)
+        count = len(data)
+        await update.message.reply_text(f"✅ predictions_log.json found!\nTotal trades recorded: **{count}**")
+        # Show first 2 entries for checking
+        if count > 0:
+            await update.message.reply_text(f"First entry:\n{json.dumps(data[0], indent=2)}")
+    except FileNotFoundError:
+        await update.message.reply_text("❌ predictions_log.json does not exist yet.")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {str(e)}")
+        
 # === UPDATED: evaluate_past_predictions (uses new clean CANDLE RESULT) ===
 async def evaluate_past_predictions(bot):
     try:
@@ -1052,6 +1067,7 @@ async def main():
     app.add_handler(CommandHandler("stake", stake_command))
     app.add_handler(CommandHandler("confidence", confidence_command))
     app.add_handler(CallbackQueryHandler(handle_buttons))
+    app.add_handler(CommandHandler("debug", cmd_debug))
 
     print("🚀 PolyFundr Pro LIVE with new reviews! ✅")
     await app.initialize()
