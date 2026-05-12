@@ -48,41 +48,49 @@ class Trade:
         return self.actual is not None and self.predicted != self.actual
 
 def load_trades() -> List[Trade]:
-    """Load your existing predictions_log.json into Trade objects for reviews"""
     try:
         with open(PREDICTIONS_FILE, "r") as f:
             preds = json.load(f)
-    except:
+        
+        if not preds:
+            return []
+            
+        trades = []
+        state = get_state()
+        
+        for p in preds:
+            try:
+                # Try different ways to get timestamp
+                if p.get("logged_at"):
+                    ts_str = p["logged_at"].replace("Z", "+00:00")
+                    ts = datetime.fromisoformat(ts_str)
+                elif p.get("window_start_ts"):
+                    ts = datetime.fromtimestamp(p["window_start_ts"], tz=timezone.utc)
+                else:
+                    continue
+                
+                actual = p.get("result")
+                correct = p.get("correct")
+                pnl = 50.0 if correct else -50.0
+                
+                trade = Trade(
+                    timestamp=ts,
+                    predicted=p.get("lean", "DOWN"),
+                    confidence=p.get("confidence", 60),
+                    actual=actual,
+                    pnl=pnl,
+                    bankroll=state.get("bankroll", 1000.0),
+                    step=state.get("step", 0)
+                )
+                trades.append(trade)
+            except:
+                continue
+                
+        return sorted(trades, key=lambda t: t.timestamp)
+        
+    except Exception as e:
+        print(f"Load trades error: {e}")
         return []
-    
-    trades = []
-    state = get_state()  # for current bankroll/step
-    for p in preds:
-        try:
-            # Timestamp from logged_at or window_start_ts
-            if p.get("logged_at"):
-                ts_str = p["logged_at"].replace("Z", "+00:00")
-                ts = datetime.fromisoformat(ts_str)
-            else:
-                ts = datetime.fromtimestamp(p["window_start_ts"], tz=timezone.utc)
-            
-            actual = p.get("result")
-            correct = p.get("correct")
-            pnl = 50.0 if correct else -50.0
-            
-            trade = Trade(
-                timestamp=ts,
-                predicted=p.get("lean", "DOWN"),
-                confidence=p.get("confidence", 60),
-                actual=actual,
-                pnl=pnl,
-                bankroll=state.get("bankroll", 1000.0),
-                step=state.get("step", 0)
-            )
-            trades.append(trade)
-        except:
-            continue
-    return sorted(trades, key=lambda t: t.timestamp)
 
 # =============================================
 # YOUR ORIGINAL HELPERS (unchanged)
