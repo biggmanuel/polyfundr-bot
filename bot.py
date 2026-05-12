@@ -18,6 +18,8 @@ PREDICTIONS_FILE = "predictions_log.json"
 SETTINGS_FILE = "settings.json"
 JOURNAL_FILE = "trade_journal.json"
 
+SEP = "━━━━━━━━━━━━━━━"
+
 # === GROQ CLIENT ===
 groq_client = Groq(api_key=GROQ_API_KEY)
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -37,7 +39,7 @@ def get_state():
     try:
         with open(STATE_FILE, "r") as f: return json.load(f)
     except:
-        return {"step": 0, "bankroll": 1000.0, "locked_direction": None, "trend_lock_time": None}
+        return {"step": 0, "bankroll": 1000.0, "locked_direction": None}
 
 def save_state(s):
     with open(STATE_FILE, "w") as f: json.dump(s, f)
@@ -138,8 +140,8 @@ def calculate_support_resistance(highs, lows, period=20):
 def calculate_volume_trend(volumes):
     avg = np.mean(volumes[-20:])
     cur = volumes[-1]
-    if cur > avg * 1.5: return "ABOVE AVERAGE 🔥"
-    elif cur < avg * 0.7: return "BELOW AVERAGE ❄️"
+    if cur > avg * 1.5: return "ABOVE AVG 🔥"
+    elif cur < avg * 0.7: return "BELOW AVG ❄️"
     return "NORMAL 📊"
 
 def detect_candle_pattern(opens, closes, highs, lows):
@@ -150,19 +152,19 @@ def detect_candle_pattern(opens, closes, highs, lows):
     lower_wick = min(o, c) - l
     total_range = h - l
     if total_range == 0 or body/total_range < 0.1: return "DOJI ➖"
-    if c > o and pc < po and c > po and o < pc: return "BULLISH ENGULFING 🟢"
-    if c < o and pc > po and c < po and o > pc: return "BEARISH ENGULFING 🔴"
-    if lower_wick > body*2 and upper_wick < body*0.5: return "HAMMER 🔨 (BULLISH)"
-    if upper_wick > body*2 and lower_wick < body*0.5: return "SHOOTING STAR ⭐ (BEARISH)"
-    return "BULLISH CANDLE 🟢" if c > o else "BEARISH CANDLE 🔴"
+    if c > o and pc < po and c > po and o < pc: return "BULL ENGULFING 🟢"
+    if c < o and pc > po and c < po and o > pc: return "BEAR ENGULFING 🔴"
+    if lower_wick > body*2 and upper_wick < body*0.5: return "HAMMER 🔨"
+    if upper_wick > body*2 and lower_wick < body*0.5: return "SHOOT STAR ⭐"
+    return "BULL CANDLE 🟢" if c > o else "BEAR CANDLE 🔴"
 
 def detect_structure(closes):
     r = closes[-10:]
     highs = [max(r[i:i+3]) for i in range(len(r)-2)]
     lows = [min(r[i:i+3]) for i in range(len(r)-2)]
     if len(highs) < 2: return "RANGING ↔️"
-    if highs[-1] > highs[-2] and lows[-1] > lows[-2]: return "BULLISH 📈 (HH/HL)"
-    elif highs[-1] < highs[-2] and lows[-1] < lows[-2]: return "BEARISH 📉 (LH/LL)"
+    if highs[-1] > highs[-2] and lows[-1] > lows[-2]: return "BULLISH 📈 HH/HL"
+    elif highs[-1] < highs[-2] and lows[-1] < lows[-2]: return "BEARISH 📉 LH/LL"
     return "RANGING ↔️"
 
 def detect_session():
@@ -174,7 +176,7 @@ def detect_session():
 
 def detect_zone(price, bb_upper, bb_lower):
     mid = (bb_upper + bb_lower) / 2
-    return "PREMIUM 🔴 (SELL AREA)" if price > mid else "DISCOUNT 💚 (BUY AREA)"
+    return "PREMIUM 🔴" if price > mid else "DISCOUNT 💚"
 
 def get_fear_greed():
     try:
@@ -183,7 +185,7 @@ def get_fear_greed():
         v = int(d['value'])
         label = d['value_classification'].upper()
         emoji = "🤑" if v >= 75 else "😤" if v >= 55 else "😐" if v >= 45 else "😨" if v >= 25 else "😱"
-        return f"{v} — {label} {emoji}"
+        return f"{v} {label} {emoji}"
     except: return "N/A"
 
 def confluence_score(rsi, macd_hist, ema9, ema21, ema50, price, stoch_k, bb_upper, bb_lower, lean):
@@ -212,34 +214,30 @@ def confluence_score(rsi, macd_hist, ema9, ema21, ema50, price, stoch_k, bb_uppe
 # === TREND ANALYSIS ===
 def get_trend(closes_1m, closes_3m, closes_5m):
     def trend_dir(closes):
+        if len(closes) < 22: return "NEUTRAL"
         ema9 = calculate_ema(closes, 9)
         ema21 = calculate_ema(closes, 21)
         rsi = calculate_rsi(closes)
         if ema9 > ema21 and rsi > 50: return "UP"
         elif ema9 < ema21 and rsi < 50: return "DOWN"
         return "NEUTRAL"
-
     t1 = trend_dir(closes_1m)
     t3 = trend_dir(closes_3m)
     t5 = trend_dir(closes_5m)
-
     if t1 == t3 == t5 == "UP": overall = "STRONG UP 📈🟢"
     elif t1 == t3 == t5 == "DOWN": overall = "STRONG DOWN 📉🔴"
     elif t1 == t3 == "UP" or t3 == t5 == "UP": overall = "WEAK UP 📈⚠️"
     elif t1 == t3 == "DOWN" or t3 == t5 == "DOWN": overall = "WEAK DOWN 📉⚠️"
-    else: overall = "MIXED ↔️ NO TRADE"
-
+    else: overall = "MIXED ↔️"
     return t1, t3, t5, overall
 
-def detect_reversal(closes_1m, closes_5m, locked_direction):
-    if not locked_direction: return False
-    ema9_1m = calculate_ema(closes_1m, 9)
-    ema21_1m = calculate_ema(closes_1m, 21)
-    rsi_1m = calculate_rsi(closes_1m)
-    if locked_direction == "UP":
-        if ema9_1m < ema21_1m and rsi_1m < 45: return True
-    elif locked_direction == "DOWN":
-        if ema9_1m > ema21_1m and rsi_1m > 55: return True
+def detect_reversal(closes_1m, locked_direction):
+    if not locked_direction or len(closes_1m) < 22: return False
+    ema9 = calculate_ema(closes_1m, 9)
+    ema21 = calculate_ema(closes_1m, 21)
+    rsi = calculate_rsi(closes_1m)
+    if locked_direction == "UP" and ema9 < ema21 and rsi < 45: return True
+    if locked_direction == "DOWN" and ema9 > ema21 and rsi > 55: return True
     return False
 
 # === ET TIME ===
@@ -251,23 +249,14 @@ def snap_to_5min(dt):
 
 def get_time_windows():
     now = get_et_now()
-    current_start = snap_to_5min(now)
-    current_end = current_start + timedelta(minutes=5)
-    past_start = current_start - timedelta(minutes=5)
-    future_end = current_end + timedelta(minutes=5)
+    cs = snap_to_5min(now)
+    ce = cs + timedelta(minutes=5)
+    ps = cs - timedelta(minutes=5)
+    fe = ce + timedelta(minutes=5)
     return {
-        "past": {
-            "label": f"{past_start.strftime('%I:%M')}-{current_start.strftime('%I:%M %p')} ET",
-            "start_ts": int(past_start.timestamp()),
-        },
-        "current": {
-            "label": f"{current_start.strftime('%I:%M')}-{current_end.strftime('%I:%M %p')} ET",
-            "start_ts": int(current_start.timestamp()),
-        },
-        "future": {
-            "label": f"{current_end.strftime('%I:%M')}-{future_end.strftime('%I:%M %p')} ET",
-            "start_ts": int(current_end.timestamp()),
-        }
+        "past": {"label": f"{ps.strftime('%I:%M')}-{cs.strftime('%I:%M %p')} ET", "start_ts": int(ps.timestamp())},
+        "current": {"label": f"{cs.strftime('%I:%M')}-{ce.strftime('%I:%M %p')} ET", "start_ts": int(cs.timestamp())},
+        "future": {"label": f"{ce.strftime('%I:%M')}-{fe.strftime('%I:%M %p')} ET", "start_ts": int(ce.timestamp())}
     }
 
 def get_market_urls():
@@ -285,14 +274,23 @@ def get_market_urls():
         "future": make_entry(cs + timedelta(minutes=5))
     }
 
-# === AUTO EVALUATOR (FIXED) ===
+# === FETCH MARKET DATA ===
+def fetch_market_data():
+    ex = ccxt.binance()
+    ohlcv_1m = ex.fetch_ohlcv("BTC/USDT", "1m", limit=60)
+    ohlcv_3m = ex.fetch_ohlcv("BTC/USDT", "3m", limit=40)
+    ohlcv_5m = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
+    ohlcv_15m = ex.fetch_ohlcv("BTC/USDT", "15m", limit=50)
+    return ohlcv_1m, ohlcv_3m, ohlcv_5m, ohlcv_15m
+
+# === AUTO EVALUATOR ===
 async def evaluate_past_predictions(bot):
     try:
         preds = load_predictions()
         if not preds: return
         state = get_state()
         settings = load_settings()
-        ex = ccxt.kraken()
+        ex = ccxt.binance()
         ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
         candle_map = {int(c[0]/1000): c for c in ohlcv}
         updated = False
@@ -330,22 +328,19 @@ async def evaluate_past_predictions(bot):
                     chat_id=chat_id,
                     text=(
                         f"📊 *CANDLE RESULT*\n"
-                        f"━━━━━━━━━━━━━━━━━━━\n"
-                        f"⏱️ Window: {pred.get('mode','?').upper()}\n"
-                        f"🤖 Predicted: {pred['lean']} | Candle: {candle_emoji} {actual}\n"
+                        f"{SEP}\n"
+                        f"🤖 Predicted: {pred['lean']} | {candle_emoji} Actual: {actual}\n"
                         f"Open: ${open_p:.2f} → Close: ${close_p:.2f}\n"
-                        f"{'📈 Closed GREEN ✅' if actual == 'UP' else '📉 Closed RED ❌'}\n"
-                        f"{result_emoji} Prediction: {'CORRECT' if correct else 'WRONG'}\n"
+                        f"{'📈 GREEN ✅' if actual == 'UP' else '📉 RED ❌'}\n"
+                        f"{result_emoji} {'CORRECT' if correct else 'WRONG'}\n"
                         f"💰 P&L: {pnl}\n"
                         f"🏦 Bankroll: ${state['bankroll']:.2f}\n"
-                        f"📶 Next Step: {state['step']}\n"
-                        f"━━━━━━━━━━━━━━━━━━━"
+                        f"📶 Step: {state['step']}\n"
+                        f"{SEP}"
                     ),
                     parse_mode=ParseMode.MARKDOWN
                 )
-
         if updated: save_predictions(preds)
-
     except Exception as e:
         print(f"Eval Error: {e}")
 
@@ -354,46 +349,81 @@ async def send_30min_review(bot):
     try:
         preds = load_predictions()
         now_utc = int(datetime.now(timezone.utc).timestamp())
-        cutoff = now_utc - 1800  # 30 mins ago
+        cutoff = now_utc - 1800
         recent = [p for p in preds if p.get("logged_at") and
                   int(datetime.fromisoformat(p["logged_at"]).timestamp()) >= cutoff]
-
-        if not recent:
-            return
-
-        lines = []
-        wins = 0
-        losses = 0
-        pending = 0
-        for p in recent:
-            if p["result"] is None:
-                status = "⏳ PENDING"
-                pending += 1
-            elif p["correct"]:
-                candle_emoji = "🟢" if p["result"] == "UP" else "🔴"
-                status = f"✅ {p['lean']} → Candle {candle_emoji} {p['result']} CORRECT"
-                wins += 1
-            else:
-                candle_emoji = "🟢" if p["result"] == "UP" else "🔴"
-                status = f"❌ {p['lean']} → Candle {candle_emoji} {p['result']} WRONG"
-                losses += 1
-            lines.append(f"• {p.get('mode','?').upper()} | {status} | Conf: {p['confidence']}%")
-
+        if not recent: return
+        wins = sum(1 for p in recent if p.get("correct") == True)
+        losses = sum(1 for p in recent if p.get("correct") == False)
+        pending = sum(1 for p in recent if p.get("result") is None)
         total = wins + losses
         rate = (wins/total*100) if total > 0 else 0
+        lines = []
+        for p in recent:
+            if p["result"] is None: status = "⏳ PENDING"
+            elif p["correct"]:
+                ce = "🟢" if p["result"] == "UP" else "🔴"
+                status = f"✅ {p['lean']} → {ce} {p['result']}"
+            else:
+                ce = "🟢" if p["result"] == "UP" else "🔴"
+                status = f"❌ {p['lean']} → {ce} {p['result']}"
+            lines.append(f"• {p.get('mode','?').upper()} {status} {p['confidence']}%")
         msg = (
-            f"🕐 *30-MIN SIGNAL REVIEW*\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Correct: {wins} | ❌ Wrong: {losses} | ⏳ Pending: {pending}\n"
+            f"🕐 *30-MIN REVIEW*\n"
+            f"{SEP}\n"
+            f"✅ {wins} | ❌ {losses} | ⏳ {pending}\n"
             f"🎯 Win Rate: {rate:.1f}%\n\n"
             + "\n".join(lines) +
-            f"\n━━━━━━━━━━━━━━━━━━━"
+            f"\n{SEP}"
         )
         for chat_id in BROADCAST_IDS:
             await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
-
     except Exception as e:
         print(f"30min Review Error: {e}")
+
+# === PAST RESULT ===
+async def send_past_result(bot, chat_id, window_start_ts, target_win):
+    try:
+        ex = ccxt.binance()
+        ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
+        candle_map = {int(c[0]/1000): c for c in ohlcv}
+        utc_ts = window_start_ts + (4 * 3600)
+        candle = candle_map.get(utc_ts)
+        preds = load_predictions()
+        pred = next((p for p in preds if p["window_start_ts"] == window_start_ts), None)
+
+        if not candle:
+            await bot.send_message(chat_id=chat_id,
+                                   text=f"⏮️ *PAST*: {target_win}\n⏳ Candle not available yet.",
+                                   parse_mode=ParseMode.MARKDOWN)
+            return
+
+        open_p = candle[1]
+        close_p = candle[4]
+        actual = "UP" if close_p >= open_p else "DOWN"
+        candle_emoji = "🟢" if actual == "UP" else "🔴"
+
+        if pred:
+            correct = pred["lean"] == actual
+            result_emoji = "✅" if correct else "❌"
+            pred_line = f"🤖 Predicted: {pred['lean']} ({pred['confidence']}%)\n{result_emoji} {'CORRECT' if correct else 'WRONG'}\n"
+        else:
+            pred_line = "🤖 No prediction for this window\n"
+
+        msg = (
+            f"⏮️ *PAST RESULT*\n"
+            f"{SEP}\n"
+            f"⏱️ {target_win}\n"
+            f"{pred_line}"
+            f"📊 Actual: {candle_emoji} {actual}\n"
+            f"{'📈 GREEN' if actual == 'UP' else '📉 RED'}\n"
+            f"${open_p:.2f} → ${close_p:.2f}\n"
+            f"Move: ${abs(close_p-open_p):.2f}\n"
+            f"{SEP}"
+        )
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        await bot.send_message(chat_id=chat_id, text=f"❌ Error: {str(e)[:100]}")
 
 # === STATS ===
 async def send_stats(bot, chat_id):
@@ -411,14 +441,14 @@ async def send_stats(bot, chat_id):
         else: break
     state = get_state()
     msg = (
-        f"📊 *POLYFUNDR STATS*\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📊 *STATS*\n"
+        f"{SEP}\n"
         f"📈 Total: {total} | ✅ {correct} | ❌ {total-correct}\n"
         f"🎯 Win Rate: {win_rate:.1f}%\n"
         f"🏦 Bankroll: ${state.get('bankroll',1000.0):.2f}\n"
-        f"⚡ Win Streak: {streak}\n"
-        f"📶 Martingale Step: {state.get('step',0)}\n"
-        f"━━━━━━━━━━━━━━━━━━"
+        f"⚡ Streak: {streak}\n"
+        f"📶 Step: {state.get('step',0)}\n"
+        f"{SEP}"
     )
     await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -426,12 +456,12 @@ async def send_stats(bot, chat_id):
 async def send_market_links(bot, chat_id):
     urls = get_market_urls()
     msg = (
-        f"🔗 *BTC 5-MIN MARKET LINKS*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔗 *MARKET LINKS*\n"
+        f"{SEP}\n"
         f"⏮️ *Past* ({urls['past']['label']})\n[Open on PolyFundr]({urls['past']['url']})\n\n"
         f"▶️ *Current* ({urls['current']['label']})\n[Open on PolyFundr]({urls['current']['url']})\n\n"
-        f"⏭️ *Next* ({urls['future']['label']})\n[Open on PolyFundr]({urls['future']['url']})\n\n"
-        f"_Tap to open directly on PolyFundr_"
+        f"⏭️ *Next* ({urls['future']['label']})\n[Open on PolyFundr]({urls['future']['url']})\n"
+        f"{SEP}"
     )
     await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN,
                            disable_web_page_preview=True)
@@ -441,18 +471,18 @@ async def send_settings(bot, chat_id):
     settings = load_settings()
     keyboard = [
         [InlineKeyboardButton("💰 Change Stake", callback_data='set_stake')],
-        [InlineKeyboardButton("🎯 Change Confidence Filter", callback_data='set_confidence')],
+        [InlineKeyboardButton("🎯 Change Confidence", callback_data='set_confidence')],
         [InlineKeyboardButton(f"🔔 Alert Mode: {'ON ✅' if settings['alert_mode'] else 'OFF ❌'}", callback_data='toggle_alert')],
         [InlineKeyboardButton("📋 Export Journal", callback_data='export_journal')],
         [InlineKeyboardButton("🔙 Back", callback_data='back_menu')]
     ]
     msg = (
         f"⚙️ *SETTINGS*\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{SEP}\n"
         f"💰 Stake: ${settings['stake']:.0f}\n"
-        f"🎯 Confidence Filter: {settings['confidence_filter']}%\n"
-        f"🔔 Alert Mode: {'ON ✅' if settings['alert_mode'] else 'OFF ❌'}\n"
-        f"━━━━━━━━━━━━━━━━━━"
+        f"🎯 Confidence: {settings['confidence_filter']}%\n"
+        f"🔔 Alert: {'ON ✅' if settings['alert_mode'] else 'OFF ❌'}\n"
+        f"{SEP}"
     )
     await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN,
                            reply_markup=InlineKeyboardMarkup(keyboard))
@@ -462,318 +492,13 @@ async def export_journal(bot, chat_id):
     if not journal:
         await bot.send_message(chat_id=chat_id, text="📋 No journal entries yet.")
         return
-    lines = ["TIME | MODE | LEAN | CONF | GRADE | RESULT | PNL"]
+    lines = ["TIME|MODE|LEAN|CONF|GRADE|RESULT|PNL"]
     for j in journal:
         dt = datetime.fromisoformat(j['logged_at']).strftime('%m/%d %H:%M')
         lines.append(f"{dt}|{j.get('mode','?').upper()}|{j.get('lean','?')}|{j.get('confidence','?')}%|{j.get('grade','?')}|{j.get('result','PENDING')}|{j.get('pnl','N/A')}")
     await bot.send_message(chat_id=chat_id,
                            text=f"```\n{chr(10).join(lines)}\n```",
                            parse_mode=ParseMode.MARKDOWN)
-
-# === PAST RESULT LOOKUP ===
-async def send_past_result(bot, chat_id, window_start_ts, target_win):
-    try:
-        ex = ccxt.kraken()
-        ohlcv = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
-        candle_map = {int(c[0]/1000): c for c in ohlcv}
-        utc_ts = window_start_ts + (4 * 3600)
-        candle = candle_map.get(utc_ts)
-
-        preds = load_predictions()
-        pred = next((p for p in preds if p["window_start_ts"] == window_start_ts), None)
-
-        if not candle:
-            await bot.send_message(chat_id=chat_id,
-                                   text=f"⏮️ *PAST WINDOW*: {target_win}\n⏳ Candle data not available yet.",
-                                   parse_mode=ParseMode.MARKDOWN)
-            return
-
-        open_p = candle[1]
-        close_p = candle[4]
-        actual = "UP" if close_p >= open_p else "DOWN"
-        candle_emoji = "🟢" if actual == "UP" else "🔴"
-        candle_result = "📈 Closed GREEN" if actual == "UP" else "📉 Closed RED"
-
-        if pred:
-            correct = pred["lean"] == actual
-            result_emoji = "✅" if correct else "❌"
-            pred_line = (
-                f"🤖 Predicted: {pred['lean']} ({pred['confidence']}%)\n"
-                f"{result_emoji} Prediction: {'CORRECT' if correct else 'WRONG'}\n"
-            )
-        else:
-            pred_line = "🤖 No prediction was made for this window\n"
-
-        msg = (
-            f"⏮️ *PAST WINDOW RESULT*\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
-            f"⏱️ Window: {target_win}\n"
-            f"{pred_line}"
-            f"📊 Actual: {candle_emoji} {actual}\n"
-            f"{candle_result}\n"
-            f"Open: ${open_p:.2f} → Close: ${close_p:.2f}\n"
-            f"{'📈' if close_p > open_p else '📉'} Move: ${abs(close_p-open_p):.2f}\n"
-            f"━━━━━━━━━━━━━━━━━━━"
-        )
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
-
-    except Exception as e:
-        await bot.send_message(chat_id=chat_id, text=f"❌ Error fetching past result: {str(e)[:100]}")
-
-# === MAIN ANALYSIS ENGINE ===
-async def run_analysis(bot, mode="future", chat_id=TELEGRAM_CHAT_ID):
-    try:
-        settings = load_settings()
-        state = get_state()
-        ex = ccxt.kraken()
-
-        # Fetch all timeframes
-        ohlcv_1m = ex.fetch_ohlcv("BTC/USDT", "1m", limit=100)
-        ohlcv_3m = ex.fetch_ohlcv("BTC/USDT", "3m", limit=60)
-        ohlcv_5m = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
-        ohlcv_15m = ex.fetch_ohlcv("BTC/USDT", "15m", limit=50)
-
-        closes_1m = np.array([x[4] for x in ohlcv_1m])
-        closes_3m = np.array([x[4] for x in ohlcv_3m])
-        closes_5m = np.array([x[4] for x in ohlcv_5m])
-        closes_15m = np.array([x[4] for x in ohlcv_15m])
-
-        opens = np.array([x[1] for x in ohlcv_5m])
-        highs = np.array([x[2] for x in ohlcv_5m])
-        lows = np.array([x[3] for x in ohlcv_5m])
-        volumes = np.array([x[5] for x in ohlcv_5m])
-
-        # Trend analysis
-        t1, t3, t5, overall_trend = get_trend(closes_1m, closes_3m, closes_5m)
-
-        # Reversal check
-        locked_dir = state.get("locked_direction")
-        reversal_detected = detect_reversal(closes_1m, closes_5m, locked_dir)
-        if reversal_detected:
-            new_dir = "DOWN" if locked_dir == "UP" else "UP"
-            state["locked_direction"] = new_dir
-            state["step"] = 0  # reset martingale on reversal
-            save_state(state)
-            for cid in BROADCAST_IDS:
-                await bot.send_message(
-                    chat_id=cid,
-                    text=(
-                        f"🚨 *TREND REVERSAL DETECTED!*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"⚠️ Was: {locked_dir} | Now: {new_dir}\n"
-                        f"🔄 Martingale reset to Step 0\n"
-                        f"📌 New locked direction: *{new_dir}*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            locked_dir = new_dir
-
-        # 15M HTF bias
-        htf_rsi = calculate_rsi(closes_15m)
-        htf_ema21 = calculate_ema(closes_15m, 21)
-        htf_price = closes_15m[-1]
-        if htf_price > htf_ema21 and htf_rsi > 50: htf_bias = "📈 BULLISH ✅"
-        elif htf_price < htf_ema21 and htf_rsi < 50: htf_bias = "📉 BEARISH ✅"
-        else: htf_bias = "↔️ NEUTRAL ⚠️"
-
-        # 5M indicators
-        rsi = calculate_rsi(closes_5m)
-        bb_upper, bb_lower = calculate_bollinger(closes_5m)
-        ema9 = calculate_ema(closes_5m, 9)
-        ema21 = calculate_ema(closes_5m, 21)
-        ema50 = calculate_ema(closes_5m, 50)
-        macd_line, signal_line, macd_hist = calculate_macd(closes_5m)
-        stoch_k, _ = calculate_stoch_rsi(closes_5m)
-        atr = calculate_atr(highs, lows, closes_5m)
-        vwap = calculate_vwap(highs, lows, closes_5m, volumes)
-        support, resistance = calculate_support_resistance(highs, lows)
-        volume_trend = calculate_volume_trend(volumes)
-        candle_pattern = detect_candle_pattern(opens, closes_5m, highs, lows)
-        structure = detect_structure(closes_5m)
-        session = detect_session()
-        current_price = closes_5m[-1]
-        current_open = opens[-1]
-        zone = detect_zone(current_price, bb_upper, bb_lower)
-        fear_greed = get_fear_greed()
-        vwap_pos = "✅ ABOVE" if current_price > vwap else "❌ BELOW"
-
-        step = state.get("step", 0)
-        stake = settings["stake"]
-        current_stake = stake * (2 ** step)
-        total_risk = sum([stake * (2 ** i) for i in range(step + 1)])
-        bankroll = state.get("bankroll", 1000.0)
-
-        windows = get_time_windows()
-        window = windows[mode]
-        target_win = window["label"]
-        window_start_ts = window["start_ts"]
-        mode_label = {"past": "PAST ⏮️", "current": "CURRENT ▶️", "future": "FUTURE ⏭️"}[mode]
-
-        # Past mode → show actual result
-        if mode == "past":
-            await send_past_result(bot, chat_id, window_start_ts, target_win)
-            return
-
-        # Determine trade direction from trend
-        if "STRONG UP" in overall_trend:
-            forced_lean = "UP"
-        elif "STRONG DOWN" in overall_trend:
-            forced_lean = "DOWN"
-        elif "WEAK UP" in overall_trend:
-            forced_lean = "UP"
-        elif "WEAK DOWN" in overall_trend:
-            forced_lean = "DOWN"
-        else:
-            forced_lean = None
-
-        # Lock direction for martingale consistency
-        if forced_lean and not locked_dir:
-            state["locked_direction"] = forced_lean
-            locked_dir = forced_lean
-            save_state(state)
-
-        # Use locked direction if set
-        effective_lean = locked_dir if locked_dir else forced_lean
-
-        future_context = "Predict the NEXT 5-minute candle after current. Project momentum forward." if mode == "future" else ""
-
-        prompt = f"""
-        You are an expert BTC 5-minute candle predictor.
-        {future_context}
-
-        TREND ANALYSIS:
-        1M Trend: {t1} | 3M Trend: {t3} | 5M Trend: {t5}
-        Overall: {overall_trend}
-        Locked Direction: {locked_dir or 'NONE'}
-
-        MARKET DATA:
-        Price: ${current_price:.2f} | VWAP: ${vwap:.2f} ({vwap_pos})
-        RSI14: {rsi:.2f} | Stoch RSI: {stoch_k:.2f}
-        EMA9: ${ema9:.2f} | EMA21: ${ema21:.2f} | EMA50: ${ema50:.2f}
-        MACD Hist: {macd_hist:.4f}
-        BB Upper: ${bb_upper:.2f} | Lower: ${bb_lower:.2f}
-        ATR: ${atr:.2f}
-        Support: ${support:.2f} | Resistance: ${resistance:.2f}
-        Volume: {volume_trend}
-        Candle Pattern: {candle_pattern}
-        Structure: {structure}
-        Zone: {zone}
-        Session: {session}
-        15M HTF Bias: {htf_bias}
-        Fear/Greed: {fear_greed}
-
-        The trend analysis suggests {effective_lean or 'NO CLEAR DIRECTION'}.
-        Only trade in the direction of the trend. If trend is mixed, return SKIP.
-
-        Return JSON ONLY:
-        {{"lean": "UP/DOWN/SKIP", "confidence": 0-100, "reasoning": "2-3 sentence explanation", "strategy": "TREND CONTINUATION/TREND PULLBACK/REVERSAL/BREAKOUT/RANGING SKIP"}}
-        """
-
-        response = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            max_tokens=300
-        )
-        data = json.loads(response.choices[0].message.content)
-
-        conf_filter = settings.get("confidence_filter", 60)
-        if data['lean'] == "SKIP" or data['confidence'] < conf_filter:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"🟡 *SKIP* | {mode_label}\n"
-                    f"Trend: {overall_trend}\n"
-                    f"Conf: {data.get('confidence', 0)}% | RSI: {rsi:.1f}\n"
-                    f"_{data.get('reasoning', 'No clear signal')}_"
-                ),
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-
-        # Enforce trend direction consistency
-        if effective_lean and data['lean'] != effective_lean and data['lean'] != "SKIP":
-            await bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"⚠️ *SIGNAL BLOCKED*\n"
-                    f"AI suggested {data['lean']} but trend is locked {effective_lean}\n"
-                    f"Staying consistent with martingale direction."
-                ),
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-
-        c_score, c_grade = confluence_score(rsi, macd_hist, ema9, ema21, ema50,
-                                            current_price, stoch_k, bb_upper, bb_lower, data['lean'])
-
-        log_prediction(window_start_ts, mode, data['lean'], data['confidence'],
-                      current_open, c_grade, data.get('strategy', 'N/A'), session)
-
-        bias_emoji = "📈" if data['lean'] == "UP" else "📉"
-        macd_emoji = "🟢" if macd_hist > 0 else "🔴"
-        invalidation = f"Breaks below ${support:.2f}" if data['lean'] == "UP" else f"Breaks above ${resistance:.2f}"
-        market_url = f"https://polyfundr.com/event/btc-updown-5m-{window_start_ts}"
-
-        msg = (
-            f"🎯 *POLYFUNDR PRO* | BTC/USDT 5M\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{bias_emoji} *BIAS:* {data['lean']}\n"
-            f"🎯 *CONFIDENCE:* {data['confidence']}%\n"
-            f"⚡ *STRATEGY:* {data.get('strategy','N/A')}\n"
-            f"🏆 *CONFLUENCE:* {c_grade} ({c_score}/100)\n"
-            f"🌍 *SESSION:* {session}\n"
-            f"🕐 *MODE:* {mode_label}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 *TREND ANALYSIS*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"1M: {t1} | 3M: {t3} | 5M: {t5}\n"
-            f"🔒 Overall: {overall_trend}\n"
-            f"📌 Locked Direction: {locked_dir or 'NONE'}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 *STRUCTURE & ZONE*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔷 *STRUCTURE:* {structure}\n"
-            f"🗺️ *ZONE:* {zone}\n"
-            f"💵 *PRICE:* ${current_price:.2f}\n"
-            f"🟢 *SUPPORT:* ${support:.2f}\n"
-            f"🔴 *RESISTANCE:* ${resistance:.2f}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📉 *INDICATORS*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📈 EMA9: ${ema9:.2f} | EMA21: ${ema21:.2f} | EMA50: ${ema50:.2f}\n"
-            f"💹 RSI14: {rsi:.2f} | ⚡ STOCH: {stoch_k:.2f}\n"
-            f"📊 MACD: {macd_hist:.4f} {macd_emoji}\n"
-            f"🌊 ATR: ${atr:.2f} | 📐 VWAP: ${vwap:.2f} {vwap_pos}\n"
-            f"🕯️ CANDLE: {candle_pattern}\n"
-            f"📦 VOLUME: {volume_trend}\n"
-            f"🌡️ FEAR/GREED: {fear_greed}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🕐 *HIGHER TIMEFRAME*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"15M BIAS: {htf_bias}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🧠 *WHY THIS TRADE*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"_{data['reasoning']}_\n\n"
-            f"⛔ *INVALIDATION:* {invalidation}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏱️ *WINDOW:* {target_win}\n"
-            f"💰 *STAKE:* ${current_stake:.0f} (Step {step})\n"
-            f"📉 *RISK:* ${total_risk:.0f}\n"
-            f"🏦 *BANKROLL:* ${bankroll:.2f}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"[🔗 Open on PolyFundr]({market_url})"
-        )
-
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN,
-                               disable_web_page_preview=True)
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Signal pushed ({mode_label}).")
-
-    except Exception as e:
-        print(f"Signal Error: {e}")
-        await bot.send_message(chat_id=chat_id, text=f"❌ Error: {str(e)[:200]}")
 
 # === DAILY SUMMARY ===
 async def send_daily_summary(bot):
@@ -791,18 +516,229 @@ async def send_daily_summary(bot):
         state = get_state()
         pnl_emoji = "💰" if net_pnl >= 0 else "📉"
         msg = (
-            f"📅 *DAILY SUMMARY — {get_et_now().strftime('%b %d')}*\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"📈 Signals: {total} | ✅ {correct} | ❌ {total-correct}\n"
+            f"📅 *DAILY — {get_et_now().strftime('%b %d')}*\n"
+            f"{SEP}\n"
+            f"📈 {total} signals | ✅ {correct} | ❌ {total-correct}\n"
             f"🎯 Win Rate: {win_rate:.1f}%\n"
             f"{pnl_emoji} P&L: {'+'if net_pnl>=0 else ''}${net_pnl:.2f}\n"
             f"🏦 Bankroll: ${state.get('bankroll',1000.0):.2f}\n"
-            f"━━━━━━━━━━━━━━━━━"
+            f"{SEP}"
         )
         for chat_id in BROADCAST_IDS:
             await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         print(f"Daily Summary Error: {e}")
+
+# === SIGNAL BUILDER ===
+async def build_and_send_signal(bot, mode="future", chat_id=None):
+    try:
+        settings = load_settings()
+        state = get_state()
+
+        ohlcv_1m, ohlcv_3m, ohlcv_5m, ohlcv_15m = fetch_market_data()
+
+        closes_1m = np.array([x[4] for x in ohlcv_1m])
+        closes_3m = np.array([x[4] for x in ohlcv_3m])
+        closes_5m = np.array([x[4] for x in ohlcv_5m])
+        closes_15m = np.array([x[4] for x in ohlcv_15m])
+        opens = np.array([x[1] for x in ohlcv_5m])
+        highs = np.array([x[2] for x in ohlcv_5m])
+        lows = np.array([x[3] for x in ohlcv_5m])
+        volumes = np.array([x[5] for x in ohlcv_5m])
+
+        # Trend
+        t1, t3, t5, overall_trend = get_trend(closes_1m, closes_3m, closes_5m)
+        locked_dir = state.get("locked_direction")
+
+        # Reversal check
+        if detect_reversal(closes_1m, locked_dir):
+            new_dir = "DOWN" if locked_dir == "UP" else "UP"
+            state["locked_direction"] = new_dir
+            state["step"] = 0
+            save_state(state)
+            targets = [chat_id] if chat_id else BROADCAST_IDS
+            for cid in targets:
+                await bot.send_message(
+                    chat_id=cid,
+                    text=(
+                        f"🚨 *REVERSAL DETECTED!*\n"
+                        f"{SEP}\n"
+                        f"Was: {locked_dir} → Now: {new_dir}\n"
+                        f"🔄 Martingale reset Step 0\n"
+                        f"📌 New lock: *{new_dir}*\n"
+                        f"{SEP}"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            locked_dir = new_dir
+
+        # HTF 15M
+        htf_rsi = calculate_rsi(closes_15m)
+        htf_ema21 = calculate_ema(closes_15m, 21)
+        htf_price = closes_15m[-1]
+        if htf_price > htf_ema21 and htf_rsi > 50: htf_bias = "📈 BULLISH ✅"
+        elif htf_price < htf_ema21 and htf_rsi < 50: htf_bias = "📉 BEARISH ✅"
+        else: htf_bias = "↔️ NEUTRAL ⚠️"
+
+        # 5M indicators
+        rsi = calculate_rsi(closes_5m)
+        bb_upper, bb_lower = calculate_bollinger(closes_5m)
+        ema9 = calculate_ema(closes_5m, 9)
+        ema21 = calculate_ema(closes_5m, 21)
+        ema50 = calculate_ema(closes_5m, 50)
+        _, _, macd_hist = calculate_macd(closes_5m)
+        stoch_k, _ = calculate_stoch_rsi(closes_5m)
+        atr = calculate_atr(highs, lows, closes_5m)
+        vwap = calculate_vwap(highs, lows, closes_5m, volumes)
+        support, resistance = calculate_support_resistance(highs, lows)
+        volume_trend = calculate_volume_trend(volumes)
+        candle_pattern = detect_candle_pattern(opens, closes_5m, highs, lows)
+        structure = detect_structure(closes_5m)
+        session = detect_session()
+        current_price = closes_5m[-1]
+        zone = detect_zone(current_price, bb_upper, bb_lower)
+        fear_greed = get_fear_greed()
+        vwap_pos = "✅" if current_price > vwap else "❌"
+
+        step = state.get("step", 0)
+        stake = settings["stake"]
+        current_stake = stake * (2 ** step)
+        total_risk = sum([stake * (2 ** i) for i in range(step + 1)])
+        bankroll = state.get("bankroll", 1000.0)
+
+        windows = get_time_windows()
+        window = windows[mode]
+        target_win = window["label"]
+        window_start_ts = window["start_ts"]
+        mode_label = {"past": "PAST ⏮️", "current": "CURRENT ▶️", "future": "FUTURE ⏭️"}[mode]
+
+        # Determine effective direction
+        if "STRONG UP" in overall_trend: forced_lean = "UP"
+        elif "STRONG DOWN" in overall_trend: forced_lean = "DOWN"
+        elif "WEAK UP" in overall_trend: forced_lean = "UP"
+        elif "WEAK DOWN" in overall_trend: forced_lean = "DOWN"
+        else: forced_lean = None
+
+        if forced_lean and not locked_dir:
+            state["locked_direction"] = forced_lean
+            locked_dir = forced_lean
+            save_state(state)
+
+        effective_lean = locked_dir if locked_dir else forced_lean
+        future_ctx = "Predict the NEXT candle. Project momentum forward." if mode == "future" else ""
+
+        prompt = f"""
+        BTC 5M predictor. {future_ctx}
+        TREND: 1M={t1} 3M={t3} 5M={t5} Overall={overall_trend}
+        Locked={locked_dir or 'NONE'} Suggested={effective_lean or 'NONE'}
+        Price=${current_price:.2f} VWAP=${vwap:.2f}
+        RSI={rsi:.1f} Stoch={stoch_k:.1f}
+        EMA9=${ema9:.2f} EMA21=${ema21:.2f} EMA50=${ema50:.2f}
+        MACD={macd_hist:.4f} ATR=${atr:.2f}
+        Support=${support:.2f} Resistance=${resistance:.2f}
+        BB=${bb_upper:.2f}/${bb_lower:.2f}
+        Vol={volume_trend} Pattern={candle_pattern}
+        Structure={structure} Zone={zone}
+        Session={session} 15M={htf_bias}
+        FearGreed={fear_greed}
+        Trade ONLY in trend direction. Mixed=SKIP.
+        JSON ONLY: {{"lean":"UP/DOWN/SKIP","confidence":0-100,"reasoning":"2 sentences","strategy":"CONTINUATION/PULLBACK/REVERSAL/BREAKOUT/SKIP"}}
+        """
+
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=200
+        )
+        data = json.loads(response.choices[0].message.content)
+
+        conf_filter = settings.get("confidence_filter", 60)
+        targets = [chat_id] if chat_id else BROADCAST_IDS
+
+        if data['lean'] == "SKIP" or data['confidence'] < conf_filter:
+            for cid in targets:
+                await bot.send_message(
+                    chat_id=cid,
+                    text=(
+                        f"🟡 *SKIP* | {mode_label}\n"
+                        f"Trend: {overall_trend}\n"
+                        f"Conf: {data.get('confidence',0)}%\n"
+                        f"_{data.get('reasoning','No clear signal')}_"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            return
+
+        if effective_lean and data['lean'] != effective_lean:
+            for cid in targets:
+                await bot.send_message(
+                    chat_id=cid,
+                    text=(
+                        f"⚠️ *BLOCKED*\n"
+                        f"AI: {data['lean']} | Lock: {effective_lean}\n"
+                        f"Staying with trend direction."
+                    ),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            return
+
+        c_score, c_grade = confluence_score(rsi, macd_hist, ema9, ema21, ema50,
+                                            current_price, stoch_k, bb_upper, bb_lower, data['lean'])
+        log_prediction(window_start_ts, mode, data['lean'], data['confidence'],
+                      current_price, c_grade, data.get('strategy','N/A'), session)
+
+        bias_emoji = "📈" if data['lean'] == "UP" else "📉"
+        macd_emoji = "🟢" if macd_hist > 0 else "🔴"
+        inv = f"< ${support:.2f}" if data['lean'] == "UP" else f"> ${resistance:.2f}"
+        market_url = f"https://polyfundr.com/event/btc-updown-5m-{window_start_ts}"
+
+        msg = (
+            f"🎯 *POLYFUNDR PRO* BTC/USDT\n"
+            f"{SEP}\n"
+            f"{bias_emoji} *{data['lean']}* | {data['confidence']}% | {c_grade}\n"
+            f"⚡ {data.get('strategy','N/A')}\n"
+            f"🌍 {session} | {mode_label}\n"
+            f"{SEP}\n"
+            f"📊 *TREND*\n"
+            f"1M: {t1} | 3M: {t3} | 5M: {t5}\n"
+            f"🔒 {overall_trend}\n"
+            f"📌 Locked: {locked_dir or 'NONE'}\n"
+            f"{SEP}\n"
+            f"📉 *INDICATORS*\n"
+            f"RSI: {rsi:.1f} | STOCH: {stoch_k:.1f}\n"
+            f"EMA9: ${ema9:.0f} | 21: ${ema21:.0f} | 50: ${ema50:.0f}\n"
+            f"MACD: {macd_hist:.4f} {macd_emoji}\n"
+            f"ATR: ${atr:.2f} | VWAP: ${vwap:.0f} {vwap_pos}\n"
+            f"🕯️ {candle_pattern}\n"
+            f"📦 {volume_trend} | 🌡️ {fear_greed}\n"
+            f"{SEP}\n"
+            f"🏗️ {structure} | {zone}\n"
+            f"💵 ${current_price:.2f}\n"
+            f"🟢 S: ${support:.2f} | 🔴 R: ${resistance:.2f}\n"
+            f"🕐 15M: {htf_bias}\n"
+            f"{SEP}\n"
+            f"🧠 _{data['reasoning']}_\n"
+            f"⛔ Fails if price {inv}\n"
+            f"{SEP}\n"
+            f"⏱️ {target_win}\n"
+            f"💰 ${current_stake:.0f} Step {step}\n"
+            f"📉 Risk: ${total_risk:.0f}\n"
+            f"🏦 Bank: ${bankroll:.2f}\n"
+            f"{SEP}\n"
+            f"[🔗 PolyFundr]({market_url})"
+        )
+
+        for cid in targets:
+            await bot.send_message(chat_id=cid, text=msg, parse_mode=ParseMode.MARKDOWN,
+                                   disable_web_page_preview=True)
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Signal sent ({mode_label})")
+
+    except Exception as e:
+        print(f"Signal Error: {e}")
+        targets = [chat_id] if chat_id else BROADCAST_IDS
+        for cid in targets:
+            await bot.send_message(chat_id=cid, text=f"❌ Error: {str(e)[:150]}")
 
 # === DASHBOARD ===
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -810,11 +746,11 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(f"⏮️ Past Result ({windows['past']['label']})", callback_data='past')],
         [InlineKeyboardButton(f"▶️ Current ({windows['current']['label']})", callback_data='current')],
-        [InlineKeyboardButton(f"⏭️ Future Signal ({windows['future']['label']})", callback_data='future')],
+        [InlineKeyboardButton(f"⏭️ Future ({windows['future']['label']})", callback_data='future')],
         [InlineKeyboardButton("🕐 30-Min Review", callback_data='review30'),
          InlineKeyboardButton("📊 Stats", callback_data='stats')],
-        [InlineKeyboardButton("🔗 Market Links", callback_data='links'),
-         InlineKeyboardButton("📅 Daily Summary", callback_data='daily')],
+        [InlineKeyboardButton("🔗 Links", callback_data='links'),
+         InlineKeyboardButton("📅 Daily", callback_data='daily')],
         [InlineKeyboardButton("⚙️ Settings", callback_data='settings')],
         [InlineKeyboardButton("🔄 Reset Martingale", callback_data='reset')]
     ]
@@ -830,8 +766,12 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_state()
     settings = load_settings()
 
-    if query.data in ['past', 'current', 'future']:
-        await run_analysis(context.bot, mode=query.data, chat_id=query.message.chat_id)
+    if query.data == 'past':
+        windows = get_time_windows()
+        await send_past_result(context.bot, query.message.chat_id,
+                               windows['past']['start_ts'], windows['past']['label'])
+    elif query.data in ['current', 'future']:
+        await build_and_send_signal(context.bot, mode=query.data, chat_id=query.message.chat_id)
     elif query.data == 'review30':
         await send_30min_review(context.bot)
     elif query.data == 'links':
@@ -857,11 +797,11 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton(f"⏮️ Past Result ({windows['past']['label']})", callback_data='past')],
             [InlineKeyboardButton(f"▶️ Current ({windows['current']['label']})", callback_data='current')],
-            [InlineKeyboardButton(f"⏭️ Future Signal ({windows['future']['label']})", callback_data='future')],
+            [InlineKeyboardButton(f"⏭️ Future ({windows['future']['label']})", callback_data='future')],
             [InlineKeyboardButton("🕐 30-Min Review", callback_data='review30'),
              InlineKeyboardButton("📊 Stats", callback_data='stats')],
-            [InlineKeyboardButton("🔗 Market Links", callback_data='links'),
-             InlineKeyboardButton("📅 Daily Summary", callback_data='daily')],
+            [InlineKeyboardButton("🔗 Links", callback_data='links'),
+             InlineKeyboardButton("📅 Daily", callback_data='daily')],
             [InlineKeyboardButton("⚙️ Settings", callback_data='settings')],
             [InlineKeyboardButton("🔄 Reset Martingale", callback_data='reset')]
         ]
@@ -874,7 +814,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state['step'] = 0
         state['locked_direction'] = None
         save_state(state)
-        await query.message.reply_text("♻️ Martingale reset. Trend lock cleared.")
+        await query.message.reply_text("♻️ Reset. Step 0. Trend lock cleared.")
 
 # === COMMANDS ===
 async def stake_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -883,7 +823,7 @@ async def stake_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         settings = load_settings()
         settings['stake'] = new_stake
         save_settings(settings)
-        await update.message.reply_text(f"💰 Stake updated to ${new_stake:.0f}")
+        await update.message.reply_text(f"💰 Stake: ${new_stake:.0f}")
     except:
         await update.message.reply_text("❌ Usage: /stake 100")
 
@@ -894,7 +834,7 @@ async def confidence_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         settings = load_settings()
         settings['confidence_filter'] = new_conf
         save_settings(settings)
-        await update.message.reply_text(f"🎯 Confidence filter updated to {new_conf}%")
+        await update.message.reply_text(f"🎯 Confidence: {new_conf}%")
     except:
         await update.message.reply_text("❌ Usage: /confidence 70")
 
@@ -916,27 +856,15 @@ async def main():
         last_review_time = None
         while True:
             now = datetime.now(timezone.utc)
-
-            # Daily summary at midnight UTC
             if now.hour == 0 and now.minute == 0 and now.date() != last_summary_date:
                 await send_daily_summary(app.bot)
                 last_summary_date = now.date()
-
-            # 30-min review every 30 mins
-            if last_review_time is None or (now - last_review_time).seconds >= 1800:
+            if last_review_time is None or (now - last_review_time).total_seconds() >= 1800:
                 await send_30min_review(app.bot)
                 last_review_time = now
-
-            # Wait for next 5-min window
             wait = 300 - ((now.minute % 5) * 60 + now.second)
-            await asyncio.sleep(wait)
-
-            # Auto broadcast future signal only (to save Groq tokens)
-            signal_data = await get_signal_data()
-            if signal_data:
-                for chat_id in BROADCAST_IDS:
-                    await bot_send_signal(app.bot, signal_data, chat_id)
-
+            await asyncio.sleep(max(wait, 1))
+            await build_and_send_signal(app.bot, mode="future")
             await asyncio.sleep(30)
             await evaluate_past_predictions(app.bot)
 
@@ -946,175 +874,5 @@ async def main():
         allowed_updates=["message", "callback_query"]
     )
     await asyncio.Event().wait()
-
-# Generate signal once, broadcast to all
-async def get_signal_data():
-    try:
-        ex = ccxt.kraken()
-        ohlcv_1m = ex.fetch_ohlcv("BTC/USDT", "1m", limit=100)
-        ohlcv_3m = ex.fetch_ohlcv("BTC/USDT", "3m", limit=60)
-        ohlcv_5m = ex.fetch_ohlcv("BTC/USDT", "5m", limit=100)
-        ohlcv_15m = ex.fetch_ohlcv("BTC/USDT", "15m", limit=50)
-
-        closes_1m = np.array([x[4] for x in ohlcv_1m])
-        closes_3m = np.array([x[4] for x in ohlcv_3m])
-        closes_5m = np.array([x[4] for x in ohlcv_5m])
-        closes_15m = np.array([x[4] for x in ohlcv_15m])
-        opens = np.array([x[1] for x in ohlcv_5m])
-        highs = np.array([x[2] for x in ohlcv_5m])
-        lows = np.array([x[3] for x in ohlcv_5m])
-        volumes = np.array([x[5] for x in ohlcv_5m])
-
-        t1, t3, t5, overall_trend = get_trend(closes_1m, closes_3m, closes_5m)
-        htf_rsi = calculate_rsi(closes_15m)
-        htf_ema21 = calculate_ema(closes_15m, 21)
-        htf_price = closes_15m[-1]
-        if htf_price > htf_ema21 and htf_rsi > 50: htf_bias = "📈 BULLISH ✅"
-        elif htf_price < htf_ema21 and htf_rsi < 50: htf_bias = "📉 BEARISH ✅"
-        else: htf_bias = "↔️ NEUTRAL ⚠️"
-
-        rsi = calculate_rsi(closes_5m)
-        bb_upper, bb_lower = calculate_bollinger(closes_5m)
-        ema9 = calculate_ema(closes_5m, 9)
-        ema21 = calculate_ema(closes_5m, 21)
-        ema50 = calculate_ema(closes_5m, 50)
-        _, _, macd_hist = calculate_macd(closes_5m)
-        stoch_k, _ = calculate_stoch_rsi(closes_5m)
-        atr = calculate_atr(highs, lows, closes_5m)
-        vwap = calculate_vwap(highs, lows, closes_5m, volumes)
-        support, resistance = calculate_support_resistance(highs, lows)
-        volume_trend = calculate_volume_trend(volumes)
-        candle_pattern = detect_candle_pattern(opens, closes_5m, highs, lows)
-        structure = detect_structure(closes_5m)
-        session = detect_session()
-        current_price = closes_5m[-1]
-        zone = detect_zone(current_price, bb_upper, bb_lower)
-        fear_greed = get_fear_greed()
-        vwap_pos = "✅ ABOVE" if current_price > vwap else "❌ BELOW"
-
-        state = get_state()
-        settings = load_settings()
-        locked_dir = state.get("locked_direction")
-
-        if "STRONG UP" in overall_trend: forced_lean = "UP"
-        elif "STRONG DOWN" in overall_trend: forced_lean = "DOWN"
-        elif "WEAK UP" in overall_trend: forced_lean = "UP"
-        elif "WEAK DOWN" in overall_trend: forced_lean = "DOWN"
-        else: forced_lean = None
-
-        effective_lean = locked_dir if locked_dir else forced_lean
-
-        windows = get_time_windows()
-        window = windows["future"]
-        target_win = window["label"]
-        window_start_ts = window["start_ts"]
-
-        prompt = f"""
-        You are an expert BTC 5-minute candle predictor.
-        Predict the NEXT 5-minute candle. Project momentum forward.
-
-        TREND: 1M={t1} | 3M={t3} | 5M={t5} | Overall={overall_trend}
-        Locked Direction: {locked_dir or 'NONE'}
-        Price: ${current_price:.2f} | VWAP: ${vwap:.2f}
-        RSI: {rsi:.2f} | Stoch: {stoch_k:.2f}
-        EMA9: ${ema9:.2f} | EMA21: ${ema21:.2f} | EMA50: ${ema50:.2f}
-        MACD Hist: {macd_hist:.4f}
-        BB: ${bb_upper:.2f}/${bb_lower:.2f}
-        Support: ${support:.2f} | Resistance: ${resistance:.2f}
-        Volume: {volume_trend} | Pattern: {candle_pattern}
-        Structure: {structure} | Zone: {zone}
-        Session: {session} | 15M: {htf_bias}
-        Fear/Greed: {fear_greed}
-        Suggested direction: {effective_lean or 'NONE'}
-        Only trade in trend direction. Mixed trend = SKIP.
-
-        JSON ONLY: {{"lean":"UP/DOWN/SKIP","confidence":0-100,"reasoning":"2 sentences","strategy":"TREND CONTINUATION/PULLBACK/REVERSAL/BREAKOUT/SKIP"}}
-        """
-
-        response = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            max_tokens=200
-        )
-        data = json.loads(response.choices[0].message.content)
-
-        conf_filter = settings.get("confidence_filter", 60)
-        if data['lean'] == "SKIP" or data['confidence'] < conf_filter:
-            return None
-
-        if effective_lean and data['lean'] != effective_lean:
-            return None
-
-        c_score, c_grade = confluence_score(rsi, macd_hist, ema9, ema21, ema50,
-                                            current_price, stoch_k, bb_upper, bb_lower, data['lean'])
-
-        log_prediction(window_start_ts, "future", data['lean'], data['confidence'],
-                      closes_5m[-1], c_grade, data.get('strategy','N/A'), session)
-
-        step = state.get("step", 0)
-        stake = settings["stake"]
-        current_stake = stake * (2 ** step)
-        total_risk = sum([stake * (2 ** i) for i in range(step + 1)])
-        bankroll = state.get("bankroll", 1000.0)
-        bias_emoji = "📈" if data['lean'] == "UP" else "📉"
-        macd_emoji = "🟢" if macd_hist > 0 else "🔴"
-        invalidation = f"Breaks below ${support:.2f}" if data['lean'] == "UP" else f"Breaks above ${resistance:.2f}"
-        market_url = f"https://polyfundr.com/event/btc-updown-5m-{window_start_ts}"
-
-        msg = (
-            f"🎯 *POLYFUNDR PRO* | BTC/USDT 5M\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"{bias_emoji} *BIAS:* {data['lean']}\n"
-            f"🎯 *CONFIDENCE:* {data['confidence']}%\n"
-            f"⚡ *STRATEGY:* {data.get('strategy','N/A')}\n"
-            f"🏆 *CONFLUENCE:* {c_grade} ({c_score}/100)\n"
-            f"🌍 *SESSION:* {session}\n"
-            f"🕐 *MODE:* FUTURE ⏭️\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"📊 *TREND ANALYSIS*\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"1M: {t1} | 3M: {t3} | 5M: {t5}\n"
-            f"🔒 Overall: {overall_trend}\n"
-            f"📌 Locked: {locked_dir or 'NONE'}\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"📊 *STRUCTURE & ZONE*\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"🔷 {structure} | 🗺️ {zone}\n"
-            f"💵 ${current_price:.2f} | 🟢 ${support:.2f} | 🔴 ${resistance:.2f}\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"📉 *INDICATORS*\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"EMA9: ${ema9:.2f} | EMA21: ${ema21:.2f} | EMA50: ${ema50:.2f}\n"
-            f"💹 RSI: {rsi:.2f} | ⚡ STOCH: {stoch_k:.2f}\n"
-            f"📊 MACD: {macd_hist:.4f} {macd_emoji}\n"
-            f"🌊 ATR: ${atr:.2f} | 📐 VWAP: ${vwap:.2f} {vwap_pos}\n"
-            f"🕯️ {candle_pattern} | 📦 {volume_trend}\n"
-            f"🌡️ FEAR/GREED: {fear_greed}\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"🕐 *15M HTF:* {htf_bias}\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"🧠 _{data['reasoning']}_\n"
-            f"⛔ *INVALIDATION:* {invalidation}\n\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"⏱️ *WINDOW:* {target_win}\n"
-            f"💰 *STAKE:* ${current_stake:.0f} (Step {step})\n"
-            f"📉 *RISK:* ${total_risk:.0f}\n"
-            f"🏦 *BANKROLL:* ${bankroll:.2f}\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"[🔗 Open on PolyFundr]({market_url})"
-        )
-        return msg
-
-    except Exception as e:
-        print(f"Signal Data Error: {e}")
-        return None
-
-async def bot_send_signal(bot, msg, chat_id):
-    try:
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN,
-                               disable_web_page_preview=True)
-    except Exception as e:
-        print(f"Send Error: {e}")
 
 asyncio.run(main())
